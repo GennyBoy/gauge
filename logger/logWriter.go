@@ -9,6 +9,7 @@
 package logger
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,34 +17,38 @@ import (
 	"strings"
 )
 
-// Writer reperesnts to a custom writer.
-// It intercents the log messages and redirects them to logger according the log level given in info
+// Writer represents to a custom writer.
+// It intercepts the log messages and redirects them to logger according the log level given in info
 type Writer struct {
 	LoggerID            string
 	ShouldWriteToStdout bool
 	stream              int
 	File                io.Writer
+	isErrorStream       bool
 }
 
-// LogInfo repesents the log message structure for plugins
+// LogInfo represents the log message structure for plugins
 type LogInfo struct {
 	LogLevel string `json:"logLevel"`
 	Message  string `json:"message"`
 }
 
 func (w Writer) Write(p []byte) (int, error) {
-	logEntry := string(p)
-	logEntries := strings.Split(logEntry, "\n")
-	for _, _logEntry := range logEntries {
-		_logEntry = strings.Trim(_logEntry, " ")
-		if len(_logEntry) == 0 {
+	scanner := bufio.NewScanner(strings.NewReader(string(p)))
+	for scanner.Scan() {
+		_logEntry := strings.Trim(scanner.Text(), " ")
+		if _logEntry == "" {
 			continue
 		}
 		_p := []byte(_logEntry)
 		m := &LogInfo{}
 		err := json.Unmarshal(_p, m)
 		if err != nil {
-			write(true, string(_p), w.File)
+			if w.isErrorStream {
+				logError(loggersMap.getLogger(w.LoggerID), w.ShouldWriteToStdout, string(_p))
+			} else {
+				logInfo(loggersMap.getLogger(w.LoggerID), w.ShouldWriteToStdout, string(_p))
+			}
 		}
 		if w.stream > 0 {
 			m.Message = fmt.Sprintf("[runner: %d] %s", w.stream, m.Message)
@@ -65,7 +70,7 @@ func (w Writer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// LogWriter reperesents the type which consists of two custom writers
+// LogWriter represents the type which consists of two custom writers
 type LogWriter struct {
 	Stderr io.Writer
 	Stdout io.Writer

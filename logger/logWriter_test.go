@@ -37,6 +37,19 @@ func TestLogWriterToOutputInfoLogInCorrectFormat(t *testing.T) {
 	assertLogContains(t, []string{"[js] [INFO] Foo"})
 }
 
+func TestLogWriterToOutputInfoLogInCorrectFormatWhenNewLinesPresent(t *testing.T) {
+	defer tearDown(t)
+	setupLogger("info")
+	l := newLogWriter("js")
+
+	if _, err := l.Stdout.Write([]byte("{\"logLevel\": \"info\", \"message\": \"Foo\"}\n\r\n{\"logLevel\": \"info\", \"message\": \"Bar\"}\n{\"logLevel\": \"info\", \"message\": \"Baz\"}")); err != nil {
+		t.Fatalf("Unable to write to logWriter")
+	}
+
+	assertLogContains(t, []string{"[js] [INFO] Foo", "[js] [INFO] Bar", "[js] [INFO] Baz"})
+	assertLogDoesNotContains(t, []string{"[js] [INFO] \r"})
+}
+
 func TestLogWriterToOutputInfoLogWithMultipleLines(t *testing.T) {
 	defer tearDown(t)
 	setupLogger("debug")
@@ -59,6 +72,30 @@ func TestLogWriterToLogPlainStrings(t *testing.T) {
 	}
 
 	assertLogContains(t, []string{"Foo Bar"})
+}
+
+func TestUnformattedLogWrittenToStderrShouldBePrefixedWithError(t *testing.T) {
+	defer tearDown(t)
+	setupLogger("debug")
+	l := newLogWriter("js")
+
+	if _, err := l.Stderr.Write([]byte("Foo Bar\n")); err != nil {
+		t.Fatalf("Unable to write to logWriter")
+	}
+
+	assertLogContains(t, []string{"[ERROR]"})
+}
+
+func TestUnformattedLogWrittenToStdoutShouldBePrefixedWithInfo(t *testing.T) {
+	defer tearDown(t)
+	setupLogger("debug")
+	l := newLogWriter("js")
+
+	if _, err := l.Stdout.Write([]byte("Foo Bar\n")); err != nil {
+		t.Fatalf("Unable to write to logWriter")
+	}
+
+	assertLogContains(t, []string{"[INFO]"})
 }
 
 func TestLoggingFromDifferentWritersAtSameTime(t *testing.T) {
@@ -125,7 +162,7 @@ func setupLogger(level string) {
 func newLogWriter(loggerID string) *LogWriter {
 	f, _ := os.OpenFile(ActiveLogFile, os.O_RDWR, 0)
 	return &LogWriter{
-		Stderr: Writer{ShouldWriteToStdout: false, stream: 0, LoggerID: loggerID, File: f},
+		Stderr: Writer{ShouldWriteToStdout: false, stream: 0, LoggerID: loggerID, File: f, isErrorStream: true},
 		Stdout: Writer{ShouldWriteToStdout: false, stream: 0, LoggerID: loggerID, File: f},
 	}
 }
@@ -138,6 +175,18 @@ func assertLogContains(t *testing.T, want []string) {
 	for _, w := range want {
 		if !strings.Contains(string(got), w) {
 			t.Errorf("Expected %s to contain %s.", string(got), w)
+		}
+	}
+}
+
+func assertLogDoesNotContains(t *testing.T, want []string) {
+	got, err := ioutil.ReadFile(ActiveLogFile)
+	if err != nil {
+		t.Fatalf("Unable to read log file. Error: %s", err.Error())
+	}
+	for _, w := range want {
+		if strings.Contains(string(got), w) {
+			t.Errorf("Expected %s to not contain %s.", string(got), w)
 		}
 	}
 }
